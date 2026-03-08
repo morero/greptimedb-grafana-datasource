@@ -285,6 +285,7 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
         severityColumnIndex = index;
       } else if (contextColumns.includes(schema.name)) {
         contextColumnIndices[schema.name] = index;
+        labelColumnIndices[schema.name] = index; // also show context columns as labels in log detail
       } else {
         // Consider other columns as potential labels
         labelColumnIndices[schema.name] = index;

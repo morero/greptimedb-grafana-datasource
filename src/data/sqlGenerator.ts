@@ -550,7 +550,7 @@ const getColumnIdentifier = (col: SelectedColumn): string => {
   // allow for functions like count()
   if (colName.includes('(') || colName.includes(')') || colName.includes('"') || colName.includes('"') || colName.includes(' as ')) {
     colName = col.name
-  } else if (colName.includes(' ')) {
+  } else if (colName.includes(' ') || colName.includes('.')) {
     colName = escapeIdentifier(col.name);
   }
 
