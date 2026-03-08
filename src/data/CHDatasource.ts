@@ -886,8 +886,8 @@ export class Datasource
   private async fetchTagValuesFromSchema(key: string): Promise<MetricFindValue[]> {
     const { from } = this.getTagSource();
     const [table, col] = key.split('.');
-    const source = from?.includes('.') ? `${from.split('.')[0]}.${table}` : table;
-    const rawSql = `select distinct ${col} from ${source} limit 1000`;
+    const source = from?.includes('.') ? `"${from.split('.')[0]}"."${table}"` : `"${table}"`;
+    const rawSql = `select distinct "${col}" from ${source} limit 1000`;
     const frame = await this.runQuery({ rawSql });
     if (frame.fields?.length === 0) {
       return [];
@@ -920,7 +920,7 @@ export class Datasource
     this.skipAdHocFilter = true;
 
     if (tagSource.source === undefined) {
-      const rawSql = 'SELECT name, type, table FROM system.columns';
+      const rawSql = `SELECT column_name as name, data_type as type, table_name as "table" FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${this.getDefaultDatabase()}'`;
       const results = await this.runQuery({ rawSql });
       return { type: TagType.schema, frame: results };
     }
@@ -946,31 +946,17 @@ export class Datasource
       return { type: TagType.query, source };
     }
     if (!source.includes('.')) {
-      const sql = `SELECT name, type, table FROM system.columns WHERE database IN ('${source}')`;
+      const sql = `SELECT column_name as name, data_type as type, table_name as "table" FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${source}'`;
       return { type: TagType.schema, source: sql, from: source };
     }
     const [db, table] = source.split('.');
-    const sql = `SELECT name, type, table FROM system.columns WHERE database IN ('${db}') AND table = '${table}'`;
+    const sql = `SELECT column_name as name, data_type as type, table_name as "table" FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '${db}' AND table_name = '${table}'`;
     return { type: TagType.schema, source: sql, from: source };
   }
 
-  // Returns true if ClickHouse's version is greater than or equal to 22.7
-  // 22.7 added 'settings additional_table_filters' which is used for ad hoc filters
+  // GreptimeDB always supports ad-hoc filters via standard SQL WHERE clauses
   private async canUseAdhocFilters(): Promise<AdHocFilterStatus> {
-    this.skipAdHocFilter = true;
-    return Promise.resolve(AdHocFilterStatus.disabled);
-    // const data = await this.fetchData(`SELECT version()`);
-    // try {
-    //   const verString = (data[0] as unknown as string).split('.');
-    //   const ver = { major: Number.parseInt(verString[0], 10), minor: Number.parseInt(verString[1], 10) };
-    //   return ver.major > this.adHocCHVerReq.major ||
-    //     (ver.major === this.adHocCHVerReq.major && ver.minor >= this.adHocCHVerReq.minor)
-    //     ? AdHocFilterStatus.enabled
-    //     : AdHocFilterStatus.disabled;
-    // } catch (err) {
-    //   console.error(`Unable to parse ClickHouse version: ${err}`);
-    //   throw err;
-    // }
+    return Promise.resolve(AdHocFilterStatus.enabled);
   }
 
   // interface DataSourceWithLogsContextSupport
