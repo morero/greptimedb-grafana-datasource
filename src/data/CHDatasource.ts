@@ -95,7 +95,7 @@ export class Datasource
         continue;
       }
 
-      const key = f.key.includes('.') ? f.key.split('.')[1] : f.key;
+      const key = this.stripTablePrefix(f.key);
       const condition: 'AND' | 'OR' = (f.condition as any) || 'AND';
       const isNullLiteral = typeof f.value === 'string' && f.value.trim().toLowerCase() === 'null';
 
@@ -160,7 +160,127 @@ export class Datasource
 
     return result;
   }
-  
+
+  /**
+   * Strip the table name prefix from a dot-separated key.
+   * getTagKeys returns keys in "table.column" format, e.g. "wide_events.span_attributes.team".
+   * For columns with dots in their name (GreptimeDB span_attributes.*), we must only strip
+   * the table prefix and preserve the rest.
+   */
+  private stripTablePrefix(key: string): string {
+    const firstDot = key.indexOf('.');
+    if (firstDot === -1) {
+      return key;
+    }
+
+    const possibleTable = key.substring(0, firstDot);
+    const remainder = key.substring(firstDot + 1);
+
+    // Known attribute prefixes that are part of the column name, not a table name
+    const knownAttrPrefixes = ['span_attributes', 'resource_attributes', 'scope_attributes'];
+    if (knownAttrPrefixes.some(p => possibleTable === p)) {
+      return key;
+    }
+
+    return remainder;
+  }
+
+  /**
+   * Inject ad-hoc filter conditions into a raw SQL string.
+   * Used for queries in SQL editor mode (not builder mode).
+   */
+  private applyAdhocFiltersToRawSql(rawSql: string, adHocFilters: AdHocVariableFilter[]): string {
+    if (!adHocFilters.length || !rawSql) {
+      return rawSql;
+    }
+
+    const conditions: string[] = [];
+    for (const f of adHocFilters) {
+      if (!f?.key || !f?.operator || f.value === undefined || f.value === null) {
+        continue;
+      }
+
+      const columnName = this.stripTablePrefix(f.key);
+      const column = `"${columnName}"`;
+      const escapedValue = String(f.value).replace(/'/g, "''");
+      const isNullLiteral = escapedValue.trim().toLowerCase() === 'null';
+      const isBoolLiteral = ['true', 'false'].includes(escapedValue.trim().toLowerCase());
+
+      const formatValue = (v: string): string => {
+        if (isBoolLiteral) { return v.trim().toLowerCase(); }
+        return `'${v}'`;
+      };
+
+      switch (f.operator) {
+        case '=':
+          conditions.push(isNullLiteral
+            ? `${column} IS NULL`
+            : `${column} = ${formatValue(escapedValue)}`);
+          break;
+        case '!=':
+          conditions.push(isNullLiteral
+            ? `${column} IS NOT NULL`
+            : `${column} != ${formatValue(escapedValue)}`);
+          break;
+        case '=~':
+          conditions.push(`${column} LIKE '${escapedValue}'`);
+          break;
+        case '!~':
+          conditions.push(`${column} NOT LIKE '${escapedValue}'`);
+          break;
+        case '>':
+          conditions.push(`${column} > ${formatValue(escapedValue)}`);
+          break;
+        case '<':
+          conditions.push(`${column} < ${formatValue(escapedValue)}`);
+          break;
+        case 'IN': {
+          const cleaned = escapedValue.trim().replace(/^\(|\)$/g, '');
+          const parts = cleaned.split(',').map(s => `'${s.trim()}'`).join(', ');
+          conditions.push(`${column} IN (${parts})`);
+          break;
+        }
+      }
+    }
+
+    if (conditions.length === 0) {
+      return rawSql;
+    }
+
+    const adhocClause = conditions.join(' AND ');
+    return this.injectWhereClause(rawSql, adhocClause);
+  }
+
+  /**
+   * Insert conditions into a SQL string's WHERE clause.
+   * If no WHERE exists, creates one before GROUP BY/ORDER BY/LIMIT.
+   * If WHERE exists, appends AND before GROUP BY/ORDER BY/LIMIT.
+   */
+  private injectWhereClause(rawSql: string, conditions: string): string {
+    const upperSql = rawSql.toUpperCase();
+
+    const terminators = ['GROUP BY', 'ORDER BY', 'LIMIT', 'HAVING', 'UNION'];
+    const findFirstTerminator = (sql: string, startFrom: number): number => {
+      let earliest = sql.length;
+      for (const keyword of terminators) {
+        const idx = sql.indexOf(keyword, startFrom);
+        if (idx !== -1 && idx < earliest) {
+          earliest = idx;
+        }
+      }
+      return earliest;
+    };
+
+    const whereIndex = upperSql.lastIndexOf('WHERE ');
+    if (whereIndex === -1) {
+      const insertAt = findFirstTerminator(upperSql, 0);
+      return rawSql.slice(0, insertAt) + ` WHERE ${conditions} ` + rawSql.slice(insertAt);
+    }
+
+    const insertAt = findFirstTerminator(upperSql, whereIndex + 6);
+    return rawSql.slice(0, insertAt) + ` AND ${conditions} ` + rawSql.slice(insertAt);
+  }
+
   _request<T = unknown>(
     url: string,
     data: Record<string, string> | null,
@@ -826,27 +946,30 @@ export class Datasource
         };
 
         const skipAdHocForTarget = Boolean((next as any)?.meta?.skipAdHocFilters);
-        if (
-          adHocFilters.length &&
-          !this.skipAdHocFilter &&
-          !skipAdHocForTarget &&
-          next.editorType === EditorType.Builder &&
-          next.builderOptions
-        ) {
-          const extraFilters = this.buildFiltersFromAdhoc(adHocFilters);
-          if (extraFilters.length) {
-            const mergedFilters = [
-              ...(next.builderOptions.filters || []),
-              ...extraFilters,
-            ];
-            const nextBuilderOptions: QueryBuilderOptions = {
-              ...next.builderOptions,
-              filters: mergedFilters,
-            };
+        if (adHocFilters.length && !this.skipAdHocFilter && !skipAdHocForTarget) {
+          if (next.editorType === EditorType.Builder && next.builderOptions) {
+            // Builder mode: merge filters into builderOptions and regenerate SQL
+            const extraFilters = this.buildFiltersFromAdhoc(adHocFilters);
+            if (extraFilters.length) {
+              const mergedFilters = [
+                ...(next.builderOptions.filters || []),
+                ...extraFilters,
+              ];
+              const nextBuilderOptions: QueryBuilderOptions = {
+                ...next.builderOptions,
+                filters: mergedFilters,
+              };
+              next = {
+                ...next,
+                builderOptions: nextBuilderOptions,
+                rawSql: generateSql(nextBuilderOptions),
+              };
+            }
+          } else if (next.rawSql) {
+            // Raw SQL mode: inject ad-hoc filter conditions directly into the SQL string
             next = {
               ...next,
-              builderOptions: nextBuilderOptions,
-              rawSql: generateSql(nextBuilderOptions),
+              rawSql: this.applyAdhocFiltersToRawSql(next.rawSql, adHocFilters),
             };
           }
         }
@@ -1068,14 +1191,17 @@ export class Datasource
 
   private async fetchTagValuesFromSchema(key: string): Promise<MetricFindValue[]> {
     const { from } = this.getTagSource();
-    const [table, col] = key.split('.');
-    // Guard against invalid or undefined column names which can generate invalid SQL like
-    // `select distinct undefined from host limit 1000`
+    // Split only on the first dot to handle column names with dots (e.g. "wide_events.span_attributes.team")
+    const firstDot = key.indexOf('.');
+    const table = firstDot !== -1 ? key.substring(0, firstDot) : key;
+    const col = firstDot !== -1 ? key.substring(firstDot + 1) : undefined;
+    // Guard against invalid or undefined column names
     if (!table || !col || col === 'undefined') {
       return [];
     }
     const source = from?.includes('.') ? `${from.split('.')[0]}.${table}` : table;
-    const rawSql = `select distinct ${col} from ${source} limit 1000`;
+    // Quote the column name since it may contain dots (e.g. span_attributes.team)
+    const rawSql = `select distinct "${col}" from ${source} limit 1000`;
     const frame = await this.runQuery({ rawSql });
     if (frame.fields?.length === 0) {
       return [];
