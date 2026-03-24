@@ -706,14 +706,15 @@ const getFilters = (options: QueryBuilderOptions): string => {
       continue;
     }
 
-    // Quote plain identifiers to preserve case (e.g. "aUTEM"),
-    // but avoid touching expressions, dotted paths, or already-quoted names.
+    // Quote identifiers to preserve case and handle column names with dots.
+    // GreptimeDB uses dotted column names (e.g. span_attributes.organization)
+    // which are NOT dotted paths but actual column names that need quoting.
+    // Avoid touching expressions or already-quoted names.
     const needsQuoting =
       !!column &&
       !column.includes('(') &&
       !column.includes(')') &&
       !column.includes('"') &&
-      !column.includes('.') &&
       !column.includes('[') &&
       !column.includes(']') &&
       !column.toLowerCase().includes(' as ');
