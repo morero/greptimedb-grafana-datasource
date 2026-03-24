@@ -272,9 +272,9 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
   const labelColumnIndices: Record<string, number> = {};
   const contextColumnIndices: Record<string, number> = {};
 
-  
+   
   if('builderOptions' in query) {
-
+    // Builder mode: match columns by their expected aliases
     columnSchemas.forEach((schema, index) => {
       const lowerCaseName = schema.name.toLowerCase();
       if (lowerCaseName === logColumnHintsToAlias.get(ColumnHint.Time)) {
@@ -290,6 +290,42 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
         labelColumnIndices[schema.name] = index;
       }
     });
+  } else {
+    // Raw SQL mode: detect columns by common names and aliases.
+    // Supports both the builder's aliases (time, body, level) and
+    // common OTel/log column names (timestamp, severity_text, message, etc.)
+    const timeNames = ['time', 'timestamp', 'ts', 'log_time', '@timestamp'];
+    const bodyNames = ['body', 'message', 'msg', 'log', 'line', 'content', 'log_body'];
+    const levelNames = ['level', 'severity', 'severity_text', 'log_level', 'loglevel', 'severity_number'];
+    const traceIdNames = ['trace_id', 'traceid'];
+
+    columnSchemas.forEach((schema, index) => {
+      const lowerCaseName = schema.name.toLowerCase();
+      if (timestampColumnIndex === -1 && timeNames.includes(lowerCaseName)) {
+        timestampColumnIndex = index;
+      } else if (bodyColumnIndex === -1 && bodyNames.includes(lowerCaseName)) {
+        bodyColumnIndex = index;
+      } else if (severityColumnIndex === -1 && levelNames.includes(lowerCaseName)) {
+        severityColumnIndex = index;
+      } else if (idColumnIndex === -1 && traceIdNames.includes(lowerCaseName)) {
+        idColumnIndex = index;
+      } else if (contextColumns.includes(schema.name)) {
+        contextColumnIndices[schema.name] = index;
+      } else {
+        labelColumnIndices[schema.name] = index;
+      }
+    });
+
+    // If still no timestamp found, use the first time-type column
+    if (timestampColumnIndex === -1) {
+      const timeTypeIndex = columnSchemas.findIndex(s =>
+        s.data_type?.toLowerCase().includes('timestamp') ||
+        s.data_type?.toLowerCase().includes('datetime')
+      );
+      if (timeTypeIndex !== -1) {
+        timestampColumnIndex = timeTypeIndex;
+      }
+    }
   }
 
   const timestamps: number[] = [];
