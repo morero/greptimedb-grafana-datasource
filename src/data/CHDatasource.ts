@@ -1074,8 +1074,8 @@ export class Datasource
     if (!table || !col || col === 'undefined') {
       return [];
     }
-    const source = from?.includes('.') ? `${from.split('.')[0]}.${table}` : table;
-    const rawSql = `select distinct ${col} from ${source} limit 1000`;
+    const source = from?.includes('.') ? `"${from.split('.')[0]}"."${table}"` : `"${table}"`;
+    const rawSql = `select distinct "${col}" from ${source} limit 1000`;
     const frame = await this.runQuery({ rawSql });
     if (frame.fields?.length === 0) {
       return [];

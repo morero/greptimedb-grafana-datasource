@@ -161,18 +161,13 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
 
   const selectPartsSql = selectParts.join(', ');
 
-  // Optimize trace ID filtering for OTel enabled trace lookups
+  // Trace ID filtering
   const hasTraceIdFilter = options.meta?.isTraceIdMode && options.meta?.traceId;
-  const otelVersion = otel.getVersion(options.meta?.otelVersion);
-  const applyTraceIdOptimization = hasTraceIdFilter && traceStartTime !== undefined && options.meta?.otelEnabled && otelVersion;
-  if (applyTraceIdOptimization) {
-    const traceId = options.meta!.traceId;
-    const timestampTable = getTableIdentifier(database, table + otel.traceTimestampTableSuffix);
-    queryParts.push('WITH');
-    queryParts.push(`'${traceId}' as trace_id,`);
-    queryParts.push(`(SELECT min(Start) FROM ${timestampTable} WHERE TraceId = trace_id) as trace_start,`);
-    queryParts.push(`(SELECT max(End) + 1 FROM ${timestampTable} WHERE TraceId = trace_id) as trace_end`);
-  }
+  // The ClickHouse OTel Collector creates a separate `_trace_id_ts` materialized view
+  // mapping trace IDs to time ranges for fast lookups. GreptimeDB doesn't create this
+  // table — it uses inverted indexes on tag columns instead, so a simple
+  // `trace_id = 'xxx'` filter is already efficient. Skip the CTE optimization.
+  const applyTraceIdOptimization = false;
 
   queryParts.push('SELECT');
   queryParts.push(selectPartsSql);
