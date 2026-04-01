@@ -44,6 +44,7 @@ import {
   getIntervalInfo,
   getTimeFieldRoundingClause,
   LOG_LEVEL_TO_IN_CLAUSE,
+  msToIntervalString,
   queryLogsVolume,
   TIME_FIELD_ALIAS,
 } from './logs';
@@ -881,28 +882,14 @@ export class Datasource
         const intervalInfo = getIntervalInfo(request.scopedVars || ({} as any));
         let interval = intervalInfo.interval;
 
-        // 如果还是 '$__interval'，说明 scopedVars 里没带实际值，按时间范围兜底计算一个
+        // If still unresolved, compute from the request's intervalMs or time range
         if (interval === '$__interval') {
           let intervalMs = request.intervalMs;
           if (!intervalMs && range) {
             const rangeMs = range.to.valueOf() - range.from.valueOf();
-            // 简单估算：大致 100 个点
             intervalMs = Math.max(Math.floor(rangeMs / 100), 1000);
           }
-
-          if (intervalMs) {
-            if (intervalMs > 60 * 60 * 1000) {
-              interval = '1d';
-            } else if (intervalMs > 60 * 1000) {
-              interval = '1h';
-            } else if (intervalMs > 1000) {
-              interval = '1m';
-            } else {
-              interval = '1s';
-            }
-          } else {
-            interval = '1m';
-          }
+          interval = intervalMs ? msToIntervalString(intervalMs) : '1m';
         }
 
         interpolated = interpolated.replace(/\$__interval/g, interval);

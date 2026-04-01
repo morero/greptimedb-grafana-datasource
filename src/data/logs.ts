@@ -172,28 +172,38 @@ function getLogVolumeFieldConfig(level: LogLevel, oneLevelDetected: boolean) {
   };
 }
 
-export function getIntervalInfo(scopedVars: ScopedVars): { interval: string; intervalMs?: number } {
-  if (scopedVars.__interval_ms) {
-    let intervalMs: number = scopedVars.__interval_ms.value;
-    let interval;
-    if (intervalMs > HOUR) {
-      intervalMs = DAY;
-      interval = '1d';
-    } else if (intervalMs > MINUTE) {
-      intervalMs = HOUR;
-      interval = '1h';
-    } else if (intervalMs > SECOND) {
-      intervalMs = MINUTE;
-      interval = '1m';
-    } else {
-      intervalMs = SECOND;
-      interval = '1s';
-    }
-
-    return { interval, intervalMs };
+/**
+ * Converts milliseconds to a GreptimeDB-compatible interval string.
+ * Produces values like '10s', '5m', '2h', '1d' — much finer than the
+ * old 4-bucket quantization (1s/1m/1h/1d).
+ */
+export function msToIntervalString(ms: number): string {
+  if (ms >= DAY) {
+    return `${Math.round(ms / DAY)}d`;
+  } else if (ms >= HOUR) {
+    return `${Math.round(ms / HOUR)}h`;
+  } else if (ms >= MINUTE) {
+    return `${Math.round(ms / MINUTE)}m`;
   } else {
-    return { interval: '$__interval' };
+    return `${Math.max(1, Math.round(ms / SECOND))}s`;
   }
+}
+
+export function getIntervalInfo(scopedVars: ScopedVars): { interval: string; intervalMs?: number } {
+  // Prefer Grafana's pre-calculated interval string if available
+  if (scopedVars.__interval?.value && scopedVars.__interval.value !== '$__interval') {
+    return {
+      interval: scopedVars.__interval.value,
+      intervalMs: scopedVars.__interval_ms?.value,
+    };
+  }
+
+  if (scopedVars.__interval_ms) {
+    const intervalMs: number = scopedVars.__interval_ms.value;
+    return { interval: msToIntervalString(intervalMs), intervalMs };
+  }
+
+  return { interval: '$__interval' };
 }
 
 // export function getTimeFieldRoundingClause(scopedVars: ScopedVars, timeField: string): string {
@@ -219,18 +229,14 @@ export function getIntervalInfo(scopedVars: ScopedVars): { interval: string; int
 
 
 export function getTimeFieldRoundingClause(scopedVars: ScopedVars, timeField: string): string {
-  let intervalString = '1d'; // Default to DAY
-  if (scopedVars.__interval_ms) {
-    const intervalMs: number = scopedVars.__interval_ms.value;
-    if (intervalMs > HOUR) {
-      intervalString = '1d';
-    } else if (intervalMs > MINUTE) {
-      intervalString = '1h';
-    } else if (intervalMs > SECOND) {
-      intervalString = '1m';
-    } else {
-      intervalString = '1s';
-    }
+  // Use Grafana's pre-calculated interval or derive from intervalMs
+  let intervalString: string;
+  if (scopedVars.__interval?.value && scopedVars.__interval.value !== '$__interval') {
+    intervalString = scopedVars.__interval.value;
+  } else if (scopedVars.__interval_ms) {
+    intervalString = msToIntervalString(scopedVars.__interval_ms.value);
+  } else {
+    intervalString = '1d'; // Default
   }
   return `date_bin('${intervalString}', "${timeField}")`;
 }
