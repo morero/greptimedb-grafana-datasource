@@ -56,14 +56,11 @@ import LogsContextPanel from 'components/LogsContextPanel';
 import { transformGreptimeResponseToGrafana, transformGreptimeDBLogs, transformGreptimeDBTraceDetails } from '../greptimedb';
 import { GreptimeResponse } from 'greptimedb/types';
 
-function createMultiSearchAnyEquivalent(llfColumn: string, searchTermsString: string, alias: string): { aggregateType: AggregateType; column: string; alias: string } {
-  const searchTerms = searchTermsString.split(','); // Split the comma-separated string into an array of terms
-  const orConditions = searchTerms.map(term => `INSTR(${llfColumn}, ${term.trim()}) > 0`).join(' OR ');
-  const greptimeEquivalent = `CAST(${orConditions} AS INTEGER)`;
-
+function createLogLevelAggregate(llfColumn: string, searchTermsString: string, alias: string): { aggregateType: AggregateType; column: string; alias: string } {
+  const inClause = searchTermsString.split(',').map(term => term.trim()).join(', ');
   return {
     aggregateType: AggregateType.Sum,
-    column: greptimeEquivalent,
+    column: `CASE WHEN ${llfColumn} IN (${inClause}) THEN 1 ELSE 0 END`,
     alias: alias,
   };
 }
@@ -277,7 +274,7 @@ export class Datasource
       let level: keyof typeof LOG_LEVEL_TO_IN_CLAUSE;
       
       for (level in LOG_LEVEL_TO_IN_CLAUSE) {
-        aggregates.push(createMultiSearchAnyEquivalent(llf, LOG_LEVEL_TO_IN_CLAUSE[level], level));
+        aggregates.push(createLogLevelAggregate(llf, LOG_LEVEL_TO_IN_CLAUSE[level], level));
       }
     } else {
       // Count all logs if level column isn't selected
