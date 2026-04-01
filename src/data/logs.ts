@@ -246,25 +246,17 @@ export const DEFAULT_LOGS_ALIAS = 'logs';
  * @see {LogLevel} for reference values
  */
 type LogLevelToInClause = Record<'critical' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'unknown', string>;
-export const LOG_LEVEL_TO_IN_CLAUSE: LogLevelToInClause = (() => {
-  const levels = {
-    critical: ['critical', 'fatal', 'crit', 'alert', 'emerg'],
-    error: ['error', 'err', 'eror'],
-    warn: ['warn', 'warning'],
-    info: ['info', 'information', 'informational'],
-    debug: ['debug', 'dbug'],
-    trace: ['trace'],
-    unknown: ['unknown'],
-  };
-  return (Object.keys(levels) as Array<keyof typeof levels>).reduce((allLevels, level) => {
-    allLevels[level] = `${[
-      ...levels[level].map((l) => `'${l}'`),
-      ...levels[level].map((l) => `'${l.toUpperCase()}'`),
-      ...levels[level].map((l) => `'${l.charAt(0).toUpperCase() + l.slice(1)}'`),
-    ].join(',')}`;
-    return allLevels;
-  }, {} as LogLevelToInClause);
-})();
+// Only lowercase values — the log volume query wraps the column with LOWER()
+// to handle case-insensitive matching. This cuts IN clause size by ~3x.
+export const LOG_LEVEL_TO_IN_CLAUSE: LogLevelToInClause = {
+  critical: "'critical','fatal','crit','alert','emerg'",
+  error: "'error','err','eror'",
+  warn: "'warn','warning'",
+  info: "'info','information','informational'",
+  debug: "'debug','dbug'",
+  trace: "'trace'",
+  unknown: "'unknown'",
+};
 
 export const allLogLevels = [
   'critical', 'fatal', 'crit', 'alert', 'emerg',
