@@ -295,7 +295,7 @@ const generateLogsQuery = (_options: QueryBuilderOptions): string => {
       queryParts.push('AND');
     }
 
-    queryParts.push(`(${logMessage.name} LIKE '%${options.meta!.logMessageLike}%')`);
+    queryParts.push(`(${escapeIdentifier(logMessage.name)} LIKE '%${options.meta!.logMessageLike}%')`);
   }
 
   const orderBy = getOrderBy(options);
