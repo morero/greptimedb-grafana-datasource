@@ -661,7 +661,11 @@ const getOrderBy = (options: QueryBuilderOptions): string => {
         return;
       }
 
-      orderByParts.push(`${colName} ${o.dir}`);
+      // Quote simple identifiers; skip expressions that already contain
+      // function calls, parens, or existing quotes.
+      const needsQuoting = !colName.includes('(') && !colName.includes(')') && !colName.includes('"');
+      const quotedName = needsQuoting ? escapeIdentifier(colName) : colName;
+      orderByParts.push(`${quotedName} ${o.dir}`);
     });
   }
 
