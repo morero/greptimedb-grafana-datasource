@@ -422,10 +422,9 @@ export class Datasource
 
       nextFilters.push({
         condition: 'AND',
-        key: (column && column.hint) ? '' : columnName,
-        hint: (column && column.hint) ? column.hint : undefined,
-        mapKey: lookupByLogLabels ? columnName : undefined,
-        type: lookupByLogLabels ? 'Map(String, String)' : 'string',
+        key: lookupByLogLabels ? columnName : ((column && column.hint) ? '' : columnName),
+        hint: (column && column.hint && !lookupByLogLabels) ? column.hint : undefined,
+        type: 'string',
         filterType: 'custom',
         operator: FilterOperator.Equals,
         value: actionValue,
@@ -456,10 +455,9 @@ export class Datasource
 
       nextFilters.push({
         condition: 'AND',
-        key: (column && column.hint) ? '' : columnName,
-        hint: (column && column.hint) ? column.hint : undefined,
-        mapKey: lookupByLogLabels ? columnName : undefined,
-        type: lookupByLogLabels ? 'Map(String, String)' : 'string',
+        key: lookupByLogLabels ? columnName : ((column && column.hint) ? '' : columnName),
+        hint: (column && column.hint && !lookupByLogLabels) ? column.hint : undefined,
+        type: 'string',
         filterType: 'custom',
         operator: FilterOperator.NotEquals,
         value: actionValue,
@@ -636,8 +634,9 @@ export class Datasource
    * TODO: This query can be slow/expensive
    */
   async fetchUniqueMapKeys(mapColumn: string, db: string, table: string): Promise<string[]> {
-    const rawSql = `SELECT DISTINCT arrayJoin(${mapColumn}.keys) as keys FROM "${db}"."${table}" LIMIT 1000`;
-    return this.fetchData(rawSql);
+    // GreptimeDB does not have ClickHouse-style Map columns.
+    // Map key enumeration is not supported — return empty to disable the map key dropdown.
+    return [];
   }
 
   async fetchEntities() {
@@ -652,45 +651,10 @@ export class Datasource
    * Fetches JSON column suggestions for each specified JSON column.
    */
   async fetchPathsForJSONColumns(database: string | undefined, table: string, jsonColumnName: string): Promise<TableColumn[]> {
-    const prefix = Boolean(database) ? `"${database}".` : '';
-    const rawSql = `SELECT arrayJoin(distinctJSONPathsAndTypes(${jsonColumnName})) FROM ${prefix}"${table}" SETTINGS max_execution_time=10`;
-    const frame = await this.runQuery({ rawSql });
-    if (frame.fields?.length === 0) {
-      return [];
-    }
-
-    const view = new DataFrameView(frame);
-    const jsonPathsAndTypes: Array<[string, string]> = [];
-    for (let x of view) {
-      if (!x || !x[0]) {
-        continue;
-      }
-
-      const kv = JSON.parse(x[0]);
-      if (!kv.keys || !kv.values) {
-        continue;
-      }
-
-      jsonPathsAndTypes.push([kv.keys, kv.values]);
-    }
-
-    const columns: TableColumn[] = [];
-    for (let pathAndTypes of jsonPathsAndTypes) {
-      const path = pathAndTypes[0];
-      const types = pathAndTypes[1];
-      if (!path || !types || types.length === 0) {
-        continue;
-      }
-
-      columns.push({
-        name: `${jsonColumnName}.${path}`,
-        label: `${jsonColumnName}.${path}`,
-        type: types[0],
-        picklistValues: [],
-      })
-    }
-
-    return columns;
+    // GreptimeDB does not support ClickHouse's distinctJSONPathsAndTypes() or arrayJoin().
+    // JSON path expansion for nested field selection is not yet available.
+    // Return empty to gracefully degrade — users can query JSON columns with raw SQL.
+    return [];
   }
   
   /**
@@ -1184,10 +1148,10 @@ export class Datasource
         // exact column name match
         f.name === columnName ||
         (isMapKey && (
-          // entire map was selected
+          // entire map/json column was selected
           f.name === mapName ||
-           // single key was selected from map
-          f.name === `arrayElement(${mapName}, '${keyName}')`
+           // single key was selected from json column
+          f.name === `json_get_string(${mapName}, '${keyName}')`
         ))
       ));
 

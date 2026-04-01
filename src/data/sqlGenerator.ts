@@ -722,7 +722,9 @@ const getFilters = (options: QueryBuilderOptions): string => {
     }
 
     if (filter.mapKey) {
-      column += `['${filter.mapKey}']`;
+      // GreptimeDB uses json_get_string() for JSON column access,
+      // not ClickHouse's Map column['key'] syntax.
+      column = `json_get_string(${column}, '${filter.mapKey}')`;
     }
 
     filterParts.push(column);
