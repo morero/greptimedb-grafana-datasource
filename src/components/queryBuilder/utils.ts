@@ -47,11 +47,11 @@ export const isNumberType = (type: string): boolean => {
 
 export const isDateType = (type: string): boolean => {
   const normalizedName = type?.toLowerCase();
-  return normalizedName?.startsWith('date') || normalizedName?.startsWith('nullable(date');
+  return normalizedName?.startsWith('date') || normalizedName?.startsWith('timestamp') || normalizedName?.startsWith('nullable(date');
 };
 export const isDateTimeType = (type: string): boolean => {
   const normalizedName = type?.toLowerCase();
-  return normalizedName?.startsWith('datetime') || normalizedName?.startsWith('nullable(datetime');
+  return normalizedName?.startsWith('datetime') || normalizedName?.startsWith('timestamp') || normalizedName?.startsWith('nullable(datetime');
 };
 export const isStringType = (type: string): boolean => {
   return !(isBooleanType(type) || isNumberType(type) || isDateType(type));
