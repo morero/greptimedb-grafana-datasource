@@ -885,8 +885,7 @@ export class Datasource
         }),
         // Map 2: Transform the GreptimeDB response data into Grafana DataFrames
         map((greptimeData: GreptimeResponse) => {
-          // Pass the appropriate format hint if needed by your transformer
-          // const formatHint = target.formatHint || GrafanaDataFormat.TimeSeries;
+          try {
           const editorType = target.editorType
           let builderOptions
           if (editorType === EditorType.SQL) {
@@ -905,6 +904,10 @@ export class Datasource
             return frames;
           } else {
             return transformGreptimeResponseToGrafana(greptimeData, target.refId, sql);
+          }
+          } catch (e: any) {
+            console.error(`Transform error for target ${target.refId}:`, e);
+            throw new Error(e?.message || e?.toString?.() || JSON.stringify(e) || 'Transform failed');
           }
           
           
