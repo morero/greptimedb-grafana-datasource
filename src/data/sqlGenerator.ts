@@ -152,11 +152,13 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
 
   const traceStatusCode = getColumnByHint(options, ColumnHint.TraceStatusCode);
   if (traceStatusCode !== undefined) {
-    selectParts.push(`if(${escapeIdentifier(traceStatusCode.name)} IN ('Error', 'STATUS_CODE_ERROR'), 2, 0) as statusCode`);
+    selectParts.push(`CASE WHEN ${escapeIdentifier(traceStatusCode.name)} IN ('Error', 'STATUS_CODE_ERROR') THEN 2 ELSE 0 END as statusCode`);
   }
   const traceEventsPrefix = getColumnByHint(options, ColumnHint.TraceEventsPrefix);
   if (traceEventsPrefix !== undefined) {
-    selectParts.push(`arrayMap((name, timestamp, attributes) -> tuple(name, toString(toUnixTimestamp64Milli(timestamp)), arrayMap( key -> map('key', key, 'value', attributes[key]), mapKeys(attributes)))::Tuple(name String, timestamp String, fields Array(Map(String, String))),${escapeIdentifier(traceEventsPrefix.name)}.Name, ${escapeIdentifier(traceEventsPrefix.name)}.Timestamp, ${escapeIdentifier(traceEventsPrefix.name)}.Attributes) AS logs`);
+    // Select the events column directly — GreptimeDB stores span events as a
+    // JSON/string column rather than ClickHouse's nested Tuple/Array structure.
+    selectParts.push(`${escapeIdentifier(traceEventsPrefix.name)} AS logs`);
   }
 
   const selectPartsSql = selectParts.join(', ');
