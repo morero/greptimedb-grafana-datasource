@@ -173,7 +173,7 @@ export class Datasource
         ...data
       },
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
         'x-greptime-db-name': this.settings.jsonData.defaultDatabase || 'public'
       }
     });
