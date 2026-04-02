@@ -1,8 +1,9 @@
 import { ColumnHint, TimeUnit } from "types/queryBuilder";
 
-export const defaultLogsTable = '';
-export const defaultTraceTable = '';
+export const defaultLogsTable = 'opentelemetry_logs';
+export const defaultTraceTable = 'opentelemetry_traces';
 
+// ClickHouse OTel Collector convention — not used in GreptimeDB
 export const traceTimestampTableSuffix = '_trace_id_ts';
 
 export interface OtelVersion {
@@ -17,17 +18,19 @@ export interface OtelVersion {
   traceDurationUnit: TimeUnit.Nanoseconds;
 }
 
+// GreptimeDB OTel schema uses snake_case column names
+// https://docs.greptime.com/user-guide/ingest-data/for-observability/opentelemetry
 const otel129: OtelVersion = {
   name: '1.2.9',
   version: '1.29.0',
   specUrl: 'https://opentelemetry.io/docs/specs/otel',
   logsTable: defaultLogsTable,
   logColumnMap: new Map<ColumnHint, string>([
-    [ColumnHint.Time, 'Timestamp'],
-    [ColumnHint.LogMessage, 'Body'],
-    [ColumnHint.LogLevel, 'SeverityText'],
-    [ColumnHint.LogLabels, 'LogAttributes'],
-    [ColumnHint.TraceId, 'TraceId'],
+    [ColumnHint.Time, 'timestamp'],
+    [ColumnHint.LogMessage, 'body'],
+    [ColumnHint.LogLevel, 'severity_text'],
+    [ColumnHint.LogLabels, 'log_attributes'],
+    [ColumnHint.TraceId, 'trace_id'],
   ]),
   logLevels: [
     'TRACE',
@@ -39,17 +42,15 @@ const otel129: OtelVersion = {
   ],
   traceTable: defaultTraceTable,
   traceColumnMap: new Map<ColumnHint, string>([
-    [ColumnHint.Time, 'Timestamp'],
-    [ColumnHint.TraceId, 'TraceId'],
-    [ColumnHint.TraceSpanId, 'SpanId'],
-    [ColumnHint.TraceParentSpanId, 'ParentSpanId'],
-    [ColumnHint.TraceServiceName, 'ServiceName'],
-    [ColumnHint.TraceOperationName, 'SpanName'],
-    [ColumnHint.TraceDurationTime, 'Duration'],
-    [ColumnHint.TraceTags, 'SpanAttributes'],
-    [ColumnHint.TraceServiceTags, 'ResourceAttributes'],
-    [ColumnHint.TraceStatusCode, 'StatusCode'],
-    [ColumnHint.TraceEventsPrefix, 'Events'],
+    [ColumnHint.Time, 'timestamp'],
+    [ColumnHint.TraceId, 'trace_id'],
+    [ColumnHint.TraceSpanId, 'span_id'],
+    [ColumnHint.TraceParentSpanId, 'parent_span_id'],
+    [ColumnHint.TraceServiceName, 'service_name'],
+    [ColumnHint.TraceOperationName, 'span_name'],
+    [ColumnHint.TraceDurationTime, 'duration_nano'],
+    [ColumnHint.TraceStatusCode, 'span_status_code'],
+    [ColumnHint.TraceEventsPrefix, 'span_events'],
   ]),
   traceDurationUnit: TimeUnit.Nanoseconds,
 };
