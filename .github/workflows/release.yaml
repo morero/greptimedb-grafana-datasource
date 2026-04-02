@@ -46,18 +46,19 @@ jobs:
 
       - name: Sign
         run: yarn sign
+        continue-on-error: true
         env:
           GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.SIGN_TOKEN }}
 
       - name: zip
         run: yarn zip
+        continue-on-error: true
       - name: Wait for files to settle
-        run: sleep 5 # Wait for 5 seconds to ensure files are fully written and released
+        run: sleep 5
       - name: List files before release
         run: |
-          ls -al info8fcc-greptimedb-datasource.zip
+          ls -al info8fcc-greptimedb-datasource.zip 2>/dev/null || echo "Signed zip not available"
           ls -al info8fcc-greptimedb-datasource-unsigned.zip
-          pwd # Print current working directory
         shell: bash
       - name: Determine Release Type
         id: release_type
@@ -70,14 +71,31 @@ jobs:
             echo "::set-output name=prerelease::false"
             echo "Release is a production release"
           fi
+      - name: Collect release files
+        id: collect_files
+        run: |
+          files=""
+          [ -f info8fcc-greptimedb-datasource.zip ] && files="info8fcc-greptimedb-datasource.zip"
+          [ -f info8fcc-greptimedb-datasource-unsigned.zip ] && files="$files info8fcc-greptimedb-datasource-unsigned.zip"
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$files" | tr ' ' '\n' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        shell: bash
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            info8fcc-greptimedb-datasource.zip
-            info8fcc-greptimedb-datasource-unsigned.zip
-          prerelease: ${{ steps.release_type.outputs.prerelease }} # Use the output from the previous step
+          files: ${{ steps.collect_files.outputs.files }}
+          prerelease: ${{ steps.release_type.outputs.prerelease }}
+      - name: Upload to existing release (workflow_dispatch)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          for f in info8fcc-greptimedb-datasource-unsigned.zip info8fcc-greptimedb-datasource.zip; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber || true
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - uses: docker/setup-qemu-action@v3
 
