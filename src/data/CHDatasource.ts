@@ -1258,6 +1258,12 @@ export class Datasource
     const builderOptions = contextQuery.builderOptions;
     builderOptions.limit = options.limit;
 
+    // Clear the message LIKE filter from the original query — log context should
+    // only be constrained by time + context columns, not the panel's search filter.
+    if (builderOptions.meta) {
+      delete builderOptions.meta.logMessageLike;
+    }
+
     if (!getColumnByHint(builderOptions, ColumnHint.Time)) {
       throw new Error('Missing time column for log context');
     }
