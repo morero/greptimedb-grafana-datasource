@@ -166,12 +166,19 @@ export class Datasource
     data: Record<string, string> | null,
     overrides: Partial<BackendSrvRequest> = {}
   ): Observable<FetchResponse<T>> {
+    // Encode data as URL-encoded form body — GreptimeDB's /v1/sql endpoint
+    // only accepts application/x-www-form-urlencoded, and Grafana's fetch()
+    // will JSON-serialize plain objects regardless of the Content-Type header.
+    const params = new URLSearchParams();
+    if (data) {
+      for (const [key, value] of Object.entries(data)) {
+        params.append(key, value);
+      }
+    }
     return getBackendSrv().fetch({
       url: `api/datasources/proxy/uid/${this.uid}/greptime/v1/sql`,
       method: 'POST',
-      data: {
-        ...data
-      },
+      data: params.toString(),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'x-greptime-db-name': this.settings.jsonData.defaultDatabase || 'public'
