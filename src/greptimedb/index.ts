@@ -269,6 +269,7 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
   let bodyColumnIndex = -1;
   let severityColumnIndex = -1;
   let idColumnIndex = -1;
+  let labelsColumnIndex = -1;
   const labelColumnIndices: Record<string, number> = {};
   const contextColumnIndices: Record<string, number> = {};
 
@@ -283,6 +284,9 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
         bodyColumnIndex = index;
       } else if (lowerCaseName === logColumnHintsToAlias.get(ColumnHint.LogLevel)) {
         severityColumnIndex = index;
+      } else if (lowerCaseName === logColumnHintsToAlias.get(ColumnHint.LogLabels)) {
+        // JSON/Map column containing log attributes — will be parsed and expanded into labels
+        labelsColumnIndex = index;
       } else if (contextColumns.includes(schema.name)) {
         contextColumnIndices[schema.name] = index;
       } else {
@@ -315,6 +319,23 @@ export function transformGreptimeDBLogs(sqlResponse: GreptimeResponse, query: CH
 
 
     const labels: Record<string, any> = {};
+
+    // If there's a dedicated labels/log_attributes JSON column, parse and expand it
+    if (labelsColumnIndex !== -1) {
+      const rawLabels = row[labelsColumnIndex];
+      if (rawLabels != null) {
+        try {
+          const parsed = typeof rawLabels === 'string' ? JSON.parse(rawLabels) : rawLabels;
+          if (typeof parsed === 'object' && parsed !== null) {
+            Object.assign(labels, parsed);
+          }
+        } catch (e) {
+          // If it's not valid JSON, treat the whole thing as a single label
+          labels['labels'] = String(rawLabels);
+        }
+      }
+    }
+
     for (const labelName in labelColumnIndices) {
       if (Object.prototype.hasOwnProperty.call(labelColumnIndices, labelName)) {
         labels[labelName] = row[labelColumnIndices[labelName]];
